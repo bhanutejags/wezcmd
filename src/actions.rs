@@ -6,9 +6,7 @@ use tokio::time::{Duration, timeout};
 use crate::protocol::{Command, Forward, Notify, Open, Vscode};
 
 pub struct ActionConfig {
-    pub host: String,
     pub confirm_forward: bool,
-    pub control_path: String,
 }
 
 pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), String> {
@@ -36,11 +34,7 @@ pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), Str
             .await
         }
         Command::Vscode(Vscode { path, host }) => {
-            let target = if config.host.is_empty() {
-                host
-            } else {
-                config.host.clone()
-            };
+            let target = host;
             let url = if target.is_empty() {
                 format!("vscode://file{path}")
             } else {
@@ -54,11 +48,7 @@ pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), Str
             .await
         }
         Command::Forward(Forward { port, host }) => {
-            let target = if config.host.is_empty() {
-                host
-            } else {
-                config.host.clone()
-            };
+            let target = host;
             if target.is_empty() {
                 return Err("no forward target host".into());
             }
@@ -66,44 +56,24 @@ pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), Str
                 return Err("denied".into());
             }
 
-            if config.control_path.is_empty() {
-                let bind = format!("{}:localhost:{}", port.0, port.0);
-                run_argv(
-                    &[
-                        "/usr/bin/ssh",
-                        "-f",
-                        "-N",
-                        "-o",
-                        "ExitOnForwardFailure=yes",
-                        "-o",
-                        "BatchMode=yes",
-                        "-L",
-                        &bind,
-                        &target,
-                    ],
-                    Duration::from_secs(10),
-                    true,
-                )
-                .await
-            } else {
-                let control = format!("ControlPath={}", config.control_path);
-                let bind = format!("{}:localhost:{}", port.0, port.0);
-                run_argv(
-                    &[
-                        "/usr/bin/ssh",
-                        "-o",
-                        &control,
-                        "-O",
-                        "forward",
-                        "-L",
-                        &bind,
-                        &target,
-                    ],
-                    Duration::from_secs(10),
-                    false,
-                )
-                .await
-            }
+            let bind = format!("{}:localhost:{}", port.0, port.0);
+            run_argv(
+                &[
+                    "/usr/bin/ssh",
+                    "-f",
+                    "-N",
+                    "-o",
+                    "ExitOnForwardFailure=yes",
+                    "-o",
+                    "BatchMode=yes",
+                    "-L",
+                    &bind,
+                    &target,
+                ],
+                Duration::from_secs(10),
+                true,
+            )
+            .await
         }
     }
 }

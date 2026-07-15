@@ -1,14 +1,12 @@
+use anyhow::Result;
+use nix::sys::stat::{Mode, umask};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-
-use anyhow::Result;
-use nix::sys::stat::{Mode, umask};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
-use tokio::time::{Duration, Instant, timeout};
+use tokio::time::{Duration, timeout};
 
 use crate::actions::{ActionConfig, dispatch};
 use crate::protocol::{Command, Response};
@@ -17,11 +15,8 @@ const MAX_LINE: usize = 8192;
 
 #[derive(Clone)]
 pub struct DaemonConfig {
-    pub host: String,
     pub socket_path: PathBuf,
-    pub idle_timeout: Duration,
     pub confirm_forward: bool,
-    pub control_path: String,
 }
 
 pub async fn serve(config: DaemonConfig) -> Result<()> {
@@ -31,12 +26,7 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
     umask(old_umask);
     let listener = listener?;
 
-    let last_active = Arc::new(Mutex::new(Instant::now()));
-    eprintln!(
-        "[wezcmd] listening on {} (host={})",
-        config.socket_path.display(),
-        config.host
-    );
+    eprintln!("[wezcmd] listening on {}", config.socket_path.display());
 
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
@@ -48,22 +38,12 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
             accept = listener.accept() => {
                 let (stream, _) = accept?;
                 let config = config.clone();
-                let last_active = Arc::clone(&last_active);
                 tokio::spawn(async move {
-                    handle_connection(stream, config, last_active).await;
+                    handle_connection(stream, config).await;
                 });
             }
             _ = &mut ctrl_c => break,
             _ = terminate.recv() => break,
-            _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                if config.idle_timeout.as_secs_f64() > 0.0 {
-                    let idle = last_active.lock().expect("last_active poisoned").elapsed();
-                    if idle > config.idle_timeout {
-                        eprintln!("[wezcmd] idle timeout; shutting down");
-                        break;
-                    }
-                }
-            }
         }
     }
 
@@ -72,24 +52,17 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
     Ok(())
 }
 
-async fn handle_connection(
-    stream: UnixStream,
-    config: DaemonConfig,
-    last_active: Arc<Mutex<Instant>>,
-) {
+async fn handle_connection(stream: UnixStream, config: DaemonConfig) {
     let (read, mut write) = stream.into_split();
     let mut reader = BufReader::new(read).take((MAX_LINE + 1) as u64);
     let mut raw = Vec::new();
 
     let response = match timeout(Duration::from_secs(2), reader.read_until(b'\n', &mut raw)).await {
         Ok(Ok(n)) if n > 0 && raw.ends_with(b"\n") && raw.len() <= MAX_LINE => {
-            *last_active.lock().expect("last_active poisoned") = Instant::now();
             match Command::from_json(raw[..raw.len() - 1].as_ref()) {
                 Ok(command) => {
                     let action_config = ActionConfig {
-                        host: config.host,
                         confirm_forward: config.confirm_forward,
-                        control_path: config.control_path,
                     };
                     match dispatch(command, &action_config).await {
                         Ok(()) => Response::ok(),

@@ -7,7 +7,7 @@ It exists because terminal escape passthrough is unreliable inside multiplexers 
 ## Commands
 
 ```bash
-wezcmd daemon --socket ~/.wezcmd/wezcmd.sock --idle-timeout 0
+wezcmd daemon --socket ~/.wezcmd/wezcmd.sock
 wezcmd probe /tmp/wezcmd-host.123.sock
 wezcmd send --socket /tmp/wezcmd-host.123.sock open --url https://example.com
 wezcmd send --socket /tmp/wezcmd-host.123.sock notify --title Build --body done

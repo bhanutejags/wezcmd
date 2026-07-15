@@ -3,12 +3,10 @@ mod client;
 mod daemon;
 mod protocol;
 
-use std::path::PathBuf;
-use std::process::ExitCode;
-use std::time::Duration;
-
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 use protocol::{Command as WireCommand, Forward, Notify, Open, Port, Vscode};
 
@@ -28,16 +26,10 @@ enum Commands {
 
 #[derive(Args)]
 struct DaemonArgs {
-    #[arg(long, default_value = "")]
-    host: String,
     #[arg(long)]
     socket: PathBuf,
-    #[arg(long, default_value_t = 21600.0)]
-    idle_timeout: f64,
     #[arg(long)]
     no_confirm_forward: bool,
-    #[arg(long, default_value = "")]
-    control_path: String,
 }
 
 #[derive(Args)]
@@ -90,11 +82,8 @@ async fn run() -> Result<ExitCode> {
     match cli.command {
         Commands::Daemon(args) => {
             daemon::serve(daemon::DaemonConfig {
-                host: args.host,
                 socket_path: args.socket,
-                idle_timeout: Duration::from_secs_f64(args.idle_timeout),
                 confirm_forward: !args.no_confirm_forward,
-                control_path: args.control_path,
             })
             .await?;
             Ok(ExitCode::SUCCESS)
