@@ -10,6 +10,7 @@ if [ "$version" != "$cargo_version" ]; then
   exit 2
 fi
 
+cargo fmt -- --check
 cargo test --locked
 jj tag set "$version"
 jj git export
