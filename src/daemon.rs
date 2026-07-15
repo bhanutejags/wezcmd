@@ -111,11 +111,8 @@ async fn handle_connection(
 
 fn prepare_socket(socket_path: &Path) -> Result<()> {
     if let Some(dir) = socket_path.parent() {
-        let existed = dir.exists();
         fs::create_dir_all(dir)?;
-        if !existed {
-            fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
-        }
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     }
     match fs::remove_file(socket_path) {
         Ok(()) => {}

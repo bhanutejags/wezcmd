@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-version="$(cargo pkgid | sed 's/.*#//')"
+version="$(cargo pkgid | sed -E 's/.*[#@]//')"
 dist="$ROOT/dist"
 rm -rf "$dist"
 mkdir -p "$dist"

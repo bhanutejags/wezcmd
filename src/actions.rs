@@ -23,7 +23,13 @@ pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), Str
         }
         Command::Notify(Notify { title, body }) => {
             run_argv(
-                &["terminal-notifier", "-title", &title, "-message", &body],
+                &[
+                    "/opt/homebrew/bin/terminal-notifier",
+                    "-title",
+                    &title,
+                    "-message",
+                    &body,
+                ],
                 Duration::from_secs(10),
                 false,
             )

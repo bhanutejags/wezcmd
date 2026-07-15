@@ -36,6 +36,6 @@ cargo test
 
 Release assets are built for:
 
-- `aarch64-apple-darwin`
+- `aarch64-apple-darwin` (Apple Silicon Macs only)
 - `aarch64-unknown-linux-musl`
 - `x86_64-unknown-linux-musl`
