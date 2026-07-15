@@ -9,6 +9,11 @@ dist="$ROOT/dist"
 rm -rf "$dist"
 mkdir -p "$dist"
 
+rustup target add \
+  aarch64-apple-darwin \
+  aarch64-unknown-linux-musl \
+  x86_64-unknown-linux-musl >/dev/null
+
 build_target() {
   local target="$1"
   local cmd=(cargo build --release --locked --target "$target")
@@ -24,7 +29,6 @@ build_target x86_64-unknown-linux-musl
 
 case "$(uname -s)" in
   Darwin)
-    rustup target add aarch64-apple-darwin >/dev/null
     build_target aarch64-apple-darwin
     ;;
   *)
