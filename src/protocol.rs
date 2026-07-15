@@ -12,6 +12,14 @@ pub enum Command {
     Vscode(Vscode),
     #[serde(rename = "notify")]
     Notify(Notify),
+    #[serde(rename = "proxy_register")]
+    ProxyRegister(ProxyRegister),
+    #[serde(rename = "proxy_listen")]
+    ProxyListen(ProxyListen),
+    #[serde(rename = "proxy_stop")]
+    ProxyStop(ProxyStop),
+    #[serde(rename = "proxy_stream")]
+    ProxyStream(ProxyStream),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,8 +52,47 @@ pub struct Notify {
     pub body: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyRegister {
+    pub session: String,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyListen {
+    pub session: String,
+    pub token: String,
+    pub local_port: Port,
+    pub remote_port: Port,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyStop {
+    pub session: String,
+    pub token: String,
+    pub local_port: Port,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyStream {
+    pub session: String,
+    pub token: String,
+    pub stream: u64,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Port(pub u16);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "event")]
+pub enum ProxyEvent {
+    #[serde(rename = "tcp_open")]
+    TcpOpen { stream: u64, remote_port: Port },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Response {
@@ -90,6 +137,36 @@ impl Command {
                     bail!("invalid");
                 }
                 if body.is_empty() || body.len() > 2000 {
+                    bail!("invalid");
+                }
+                Ok(())
+            }
+            Command::ProxyRegister(ProxyRegister { session, token }) => {
+                validate_id(session)?;
+                validate_token(token)
+            }
+            Command::ProxyListen(ProxyListen {
+                session,
+                token,
+                local_port: _,
+                remote_port: _,
+            })
+            | Command::ProxyStop(ProxyStop {
+                session,
+                token,
+                local_port: _,
+            }) => {
+                validate_id(session)?;
+                validate_token(token)
+            }
+            Command::ProxyStream(ProxyStream {
+                session,
+                token,
+                stream,
+            }) => {
+                validate_id(session)?;
+                validate_token(token)?;
+                if *stream == 0 {
                     bail!("invalid");
                 }
                 Ok(())
@@ -178,6 +255,30 @@ pub fn validate_host(host: &str) -> Result<()> {
 
 fn validate_path(path: &str) -> Result<()> {
     if !path.starts_with('/') || path.len() > 4096 || path.chars().any(|c| c.is_control()) {
+        bail!("invalid");
+    }
+    Ok(())
+}
+
+fn validate_id(value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 128
+        || value
+            .chars()
+            .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')))
+    {
+        bail!("invalid");
+    }
+    Ok(())
+}
+
+fn validate_token(value: &str) -> Result<()> {
+    if value.len() < 16
+        || value.len() > 128
+        || value
+            .chars()
+            .any(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')))
+    {
         bail!("invalid");
     }
     Ok(())

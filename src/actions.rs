@@ -75,6 +75,10 @@ pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), Str
             )
             .await
         }
+        Command::ProxyRegister(_)
+        | Command::ProxyListen(_)
+        | Command::ProxyStop(_)
+        | Command::ProxyStream(_) => Err("invalid action".into()),
     }
 }
 

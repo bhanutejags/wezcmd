@@ -10,6 +10,7 @@ use tokio::time::{Duration, timeout};
 
 use crate::actions::{ActionConfig, dispatch};
 use crate::protocol::{Command, Response};
+use crate::proxy::ProxyState;
 
 const MAX_LINE: usize = 8192;
 
@@ -20,6 +21,7 @@ pub struct DaemonConfig {
 }
 
 pub async fn serve(config: DaemonConfig) -> Result<()> {
+    let proxy = ProxyState::default();
     prepare_socket(&config.socket_path)?;
     let old_umask = umask(Mode::from_bits_truncate(0o177));
     let listener = UnixListener::bind(&config.socket_path);
@@ -38,8 +40,9 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
             accept = listener.accept() => {
                 let (stream, _) = accept?;
                 let config = config.clone();
+                let proxy = proxy.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, config).await;
+                    handle_connection(stream, config, proxy).await;
                 });
             }
             _ = &mut ctrl_c => break,
@@ -52,34 +55,51 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
     Ok(())
 }
 
-async fn handle_connection(stream: UnixStream, config: DaemonConfig) {
-    let (read, mut write) = stream.into_split();
-    let mut reader = BufReader::new(read).take((MAX_LINE + 1) as u64);
+async fn handle_connection(stream: UnixStream, config: DaemonConfig, proxy: ProxyState) {
+    let mut reader = BufReader::new(stream).take((MAX_LINE + 1) as u64);
     let mut raw = Vec::new();
 
-    let response = match timeout(Duration::from_secs(2), reader.read_until(b'\n', &mut raw)).await {
+    let command = match timeout(Duration::from_secs(2), reader.read_until(b'\n', &mut raw)).await {
         Ok(Ok(n)) if n > 0 && raw.ends_with(b"\n") && raw.len() <= MAX_LINE => {
-            match Command::from_json(raw[..raw.len() - 1].as_ref()) {
-                Ok(command) => {
-                    let action_config = ActionConfig {
-                        confirm_forward: config.confirm_forward,
-                    };
-                    match dispatch(command, &action_config).await {
-                        Ok(()) => Response::ok(),
-                        Err(err) => Response::error(err),
-                    }
-                }
-                Err(_) => Response::error("invalid"),
-            }
+            Command::from_json(raw[..raw.len() - 1].as_ref())
         }
-        _ => Response::error("invalid"),
+        _ => Err(anyhow::anyhow!("invalid")),
     };
 
+    let stream = reader.into_inner().into_inner();
+    match command {
+        Ok(Command::ProxyRegister(command)) => {
+            let _ = crate::proxy::register(stream, command, proxy).await;
+        }
+        Ok(Command::ProxyListen(command)) => {
+            write_response(stream, crate::proxy::listen(command, proxy).await).await;
+        }
+        Ok(Command::ProxyStop(command)) => {
+            write_response(stream, crate::proxy::stop(command, proxy).await).await;
+        }
+        Ok(Command::ProxyStream(command)) => {
+            crate::proxy::attach_stream(stream, command, proxy).await;
+        }
+        Ok(command) => {
+            let action_config = ActionConfig {
+                confirm_forward: config.confirm_forward,
+            };
+            let response = match dispatch(command, &action_config).await {
+                Ok(()) => Response::ok(),
+                Err(err) => Response::error(err),
+            };
+            write_response(stream, response).await;
+        }
+        Err(_) => write_response(stream, Response::error("invalid")).await,
+    }
+}
+
+async fn write_response(mut stream: UnixStream, response: Response) {
     let body = serde_json::to_vec(&response)
         .unwrap_or_else(|_| b"{\"ok\":false,\"err\":\"error\"}".to_vec());
-    let _ = write.write_all(&body).await;
-    let _ = write.write_all(b"\n").await;
-    let _ = write.shutdown().await;
+    let _ = stream.write_all(&body).await;
+    let _ = stream.write_all(b"\n").await;
+    let _ = stream.shutdown().await;
 }
 
 fn prepare_socket(socket_path: &Path) -> Result<()> {

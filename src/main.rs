@@ -2,13 +2,16 @@ mod actions;
 mod client;
 mod daemon;
 mod protocol;
+mod proxy;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use protocol::{Command as WireCommand, Forward, Notify, Open, Port, Vscode};
+use protocol::{
+    Command as WireCommand, Forward, Notify, Open, Port, ProxyListen, ProxyStop, Vscode,
+};
 
 #[derive(Parser)]
 #[command(name = "wezcmd", version, about = "Remote-to-local command socket")]
@@ -22,6 +25,9 @@ enum Commands {
     Daemon(DaemonArgs),
     Probe { socket: PathBuf },
     Send(SendArgs),
+    ProxyWorker(ProxyWorkerArgs),
+    ProxyListen(ProxyListenArgs),
+    ProxyStop(ProxyStopArgs),
 }
 
 #[derive(Args)]
@@ -38,6 +44,44 @@ struct SendArgs {
     socket: PathBuf,
     #[command(subcommand)]
     command: SendCommand,
+}
+
+#[derive(Args)]
+struct ProxyWorkerArgs {
+    #[arg(long)]
+    socket: PathBuf,
+    #[arg(long)]
+    session: String,
+    #[arg(long)]
+    token: String,
+    #[arg(long, default_value = "127.0.0.1")]
+    remote_host: String,
+}
+
+#[derive(Args)]
+struct ProxyListenArgs {
+    #[arg(long)]
+    socket: PathBuf,
+    #[arg(long)]
+    session: String,
+    #[arg(long)]
+    token: String,
+    #[arg(long)]
+    local_port: u16,
+    #[arg(long)]
+    remote_port: u16,
+}
+
+#[derive(Args)]
+struct ProxyStopArgs {
+    #[arg(long)]
+    socket: PathBuf,
+    #[arg(long)]
+    session: String,
+    #[arg(long)]
+    token: String,
+    #[arg(long)]
+    local_port: u16,
 }
 
 #[derive(Subcommand)]
@@ -93,18 +137,46 @@ async fn run() -> Result<ExitCode> {
         } else {
             ExitCode::FAILURE
         }),
-        Commands::Send(args) => {
-            let command = send_command(args.command);
-            command.validate()?;
-            let response = client::send(&args.socket, &command).await?;
-            println!("{}", serde_json::to_string(&response)?);
-            Ok(if response.ok {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(2)
-            })
+        Commands::Send(args) => send(&args.socket, send_command(args.command)).await,
+        Commands::ProxyWorker(args) => {
+            proxy::worker(&args.socket, args.session, args.token, args.remote_host).await?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Commands::ProxyListen(args) => {
+            send(
+                &args.socket,
+                WireCommand::ProxyListen(ProxyListen {
+                    session: args.session,
+                    token: args.token,
+                    local_port: Port(args.local_port),
+                    remote_port: Port(args.remote_port),
+                }),
+            )
+            .await
+        }
+        Commands::ProxyStop(args) => {
+            send(
+                &args.socket,
+                WireCommand::ProxyStop(ProxyStop {
+                    session: args.session,
+                    token: args.token,
+                    local_port: Port(args.local_port),
+                }),
+            )
+            .await
         }
     }
+}
+
+async fn send(socket: &std::path::Path, command: WireCommand) -> Result<ExitCode> {
+    command.validate()?;
+    let response = client::send(socket, &command).await?;
+    println!("{}", serde_json::to_string(&response)?);
+    Ok(if response.ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
+    })
 }
 
 fn send_command(command: SendCommand) -> WireCommand {

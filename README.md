@@ -15,6 +15,35 @@ wezcmd send --socket /tmp/wezcmd-host.123.sock vscode --path /home/me/src --host
 wezcmd send --socket /tmp/wezcmd-host.123.sock forward --port 8443 --host cd
 ```
 
+## Experimental TCP proxy branch
+
+This branch prototypes supervised TCP tunnels without `ssh -fNL`.
+
+One remote worker holds a control connection over the same forwarded Unix socket:
+
+```bash
+wezcmd proxy-worker --socket "$WEZCMD_SOCKET" \
+  --session "$WEZCMD_SESSION_ID" --token "$WEZCMD_SESSION_TOKEN"
+```
+
+A remote shell can then ask the Mac daemon to listen locally and bridge each
+incoming TCP connection back to the worker. Each TCP stream uses a fresh Unix
+socket connection, so there is no custom byte-multiplexing protocol.
+
+```bash
+wezcmd proxy-listen --socket "$WEZCMD_SOCKET" \
+  --session "$WEZCMD_SESSION_ID" --token "$WEZCMD_SESSION_TOKEN" \
+  --local-port 8443 --remote-port 8443
+
+wezcmd proxy-stop --socket "$WEZCMD_SOCKET" \
+  --session "$WEZCMD_SESSION_ID" --token "$WEZCMD_SESSION_TOKEN" \
+  --local-port 8443
+```
+
+If the worker/control connection exits, the daemon drops that session's listeners.
+The existing `forward` command still uses `ssh -fNL`; this proxy is not wired into
+dotfiles yet.
+
 ## Protocol
 
 ```json
