@@ -112,7 +112,11 @@ async fn handle_connection(
 fn prepare_socket(socket_path: &Path) -> Result<()> {
     if let Some(dir) = socket_path.parent() {
         fs::create_dir_all(dir)?;
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+        if let Err(err) = fs::set_permissions(dir, fs::Permissions::from_mode(0o700)) {
+            if err.kind() != std::io::ErrorKind::PermissionDenied {
+                return Err(err.into());
+            }
+        }
     }
     match fs::remove_file(socket_path) {
         Ok(()) => {}
