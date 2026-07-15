@@ -1,0 +1,13 @@
+[tools]
+rust = { version = "latest", targets = "aarch64-unknown-linux-musl,x86_64-unknown-linux-musl,x86_64-apple-darwin,aarch64-apple-darwin" }
+zig = "latest"
+"cargo:cargo-zigbuild" = "latest"
+
+[tasks.fmt]
+run = "cargo fmt -- --check"
+
+[tasks.test]
+run = "cargo test"
+
+[tasks.build-release]
+run = "./scripts/build-release.sh"
