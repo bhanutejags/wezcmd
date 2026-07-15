@@ -24,9 +24,8 @@ build_target x86_64-unknown-linux-musl
 
 case "$(uname -s)" in
   Darwin)
-    rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null
+    rustup target add aarch64-apple-darwin >/dev/null
     build_target aarch64-apple-darwin
-    build_target x86_64-apple-darwin
     ;;
   *)
     echo "Skipping Darwin targets on $(uname -s); GitHub Actions builds them on macOS." >&2
