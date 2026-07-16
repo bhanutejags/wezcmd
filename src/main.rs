@@ -35,7 +35,7 @@ struct DaemonArgs {
     #[arg(long)]
     socket: PathBuf,
     #[arg(long)]
-    no_confirm_forward: bool,
+    enable_proxy: bool,
 }
 
 #[derive(Args)]
@@ -127,7 +127,7 @@ async fn run() -> Result<ExitCode> {
         Commands::Daemon(args) => {
             daemon::serve(daemon::DaemonConfig {
                 socket_path: args.socket,
-                confirm_forward: !args.no_confirm_forward,
+                enable_proxy: args.enable_proxy,
             })
             .await?;
             Ok(ExitCode::SUCCESS)

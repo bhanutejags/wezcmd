@@ -230,10 +230,14 @@ async fn bridge_connection(
         return Err(anyhow!("session gone"));
     }
 
-    let mut unix = timeout(STREAM_CONNECT_TIMEOUT, receiver)
-        .await
-        .map_err(|_| anyhow!("stream timeout"))?
-        .map_err(|_| anyhow!("stream canceled"))?;
+    let mut unix = match timeout(STREAM_CONNECT_TIMEOUT, receiver).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(_)) => return Err(anyhow!("stream canceled")),
+        Err(_) => {
+            state.inner.pending.lock().await.remove(&key);
+            return Err(anyhow!("stream timeout"));
+        }
+    };
     let _ = copy_bidirectional(&mut local, &mut unix).await;
     Ok(())
 }

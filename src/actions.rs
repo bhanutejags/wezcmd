@@ -5,11 +5,9 @@ use tokio::time::{Duration, timeout};
 
 use crate::protocol::{Command, Forward, Notify, Open, Vscode};
 
-pub struct ActionConfig {
-    pub confirm_forward: bool,
-}
+pub struct ActionConfig;
 
-pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), String> {
+pub async fn dispatch(command: Command, _config: &ActionConfig) -> Result<(), String> {
     match command {
         Command::Open(Open { url }) => {
             run_argv(
@@ -52,7 +50,7 @@ pub async fn dispatch(command: Command, config: &ActionConfig) -> Result<(), Str
             if target.is_empty() {
                 return Err("no forward target host".into());
             }
-            if config.confirm_forward && !confirm_forward(port.0, &target).await {
+            if !confirm_forward(port.0, &target).await {
                 return Err("denied".into());
             }
 
@@ -89,7 +87,7 @@ async fn confirm_forward(port: u16, host: &str) -> bool {
   display dialog "A remote session requests forwarding port " & p & " on " & h & " to your Mac. Allow?" buttons {"Deny", "Allow"} default button "Deny" cancel button "Deny" with title "wezcmd"
 end run"#;
     run_argv(
-        &["osascript", "-e", script, host, &port.to_string()],
+        &["/usr/bin/osascript", "-e", script, host, &port.to_string()],
         Duration::from_secs(120),
         false,
     )

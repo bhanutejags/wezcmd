@@ -15,9 +15,10 @@ wezcmd send --socket /tmp/wezcmd-host.123.sock vscode --path /home/me/src --host
 wezcmd send --socket /tmp/wezcmd-host.123.sock forward --port 8443 --host cd
 ```
 
-## Experimental TCP proxy branch
+## Experimental TCP proxy
 
-This branch prototypes supervised TCP tunnels without `ssh -fNL`.
+`wezcmd daemon --enable-proxy` enables a prototype supervised TCP tunnel mode without `ssh -fNL`.
+It is disabled by default.
 
 One remote worker holds a control connection over the same forwarded Unix socket:
 
@@ -42,7 +43,7 @@ wezcmd proxy-stop --socket "$WEZCMD_SOCKET" \
 
 If the worker/control connection exits, the daemon drops that session's listeners.
 The existing `forward` command still uses `ssh -fNL`; this proxy is not wired into
-dotfiles yet.
+dotfiles yet and should stay opt-in until the UX/security model settles.
 
 ## Protocol
 

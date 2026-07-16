@@ -17,7 +17,7 @@ const MAX_LINE: usize = 8192;
 #[derive(Clone)]
 pub struct DaemonConfig {
     pub socket_path: PathBuf,
-    pub confirm_forward: bool,
+    pub enable_proxy: bool,
 }
 
 pub async fn serve(config: DaemonConfig) -> Result<()> {
@@ -68,22 +68,26 @@ async fn handle_connection(stream: UnixStream, config: DaemonConfig, proxy: Prox
 
     let stream = reader.into_inner().into_inner();
     match command {
-        Ok(Command::ProxyRegister(command)) => {
+        Ok(Command::ProxyRegister(command)) if config.enable_proxy => {
             let _ = crate::proxy::register(stream, command, proxy).await;
         }
-        Ok(Command::ProxyListen(command)) => {
+        Ok(Command::ProxyListen(command)) if config.enable_proxy => {
             write_response(stream, crate::proxy::listen(command, proxy).await).await;
         }
-        Ok(Command::ProxyStop(command)) => {
+        Ok(Command::ProxyStop(command)) if config.enable_proxy => {
             write_response(stream, crate::proxy::stop(command, proxy).await).await;
         }
-        Ok(Command::ProxyStream(command)) => {
+        Ok(Command::ProxyStream(command)) if config.enable_proxy => {
             crate::proxy::attach_stream(stream, command, proxy).await;
         }
+        Ok(Command::ProxyRegister(_))
+        | Ok(Command::ProxyListen(_))
+        | Ok(Command::ProxyStop(_))
+        | Ok(Command::ProxyStream(_)) => {
+            write_response(stream, Response::error("proxy disabled")).await;
+        }
         Ok(command) => {
-            let action_config = ActionConfig {
-                confirm_forward: config.confirm_forward,
-            };
+            let action_config = ActionConfig;
             let response = match dispatch(command, &action_config).await {
                 Ok(()) => Response::ok(),
                 Err(err) => Response::error(err),
