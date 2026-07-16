@@ -17,7 +17,6 @@ const MAX_LINE: usize = 8192;
 #[derive(Clone)]
 pub struct DaemonConfig {
     pub socket_path: PathBuf,
-    pub enable_proxy: bool,
 }
 
 pub async fn serve(config: DaemonConfig) -> Result<()> {
@@ -39,10 +38,9 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
         tokio::select! {
             accept = listener.accept() => {
                 let (stream, _) = accept?;
-                let config = config.clone();
                 let proxy = proxy.clone();
                 tokio::spawn(async move {
-                    handle_connection(stream, config, proxy).await;
+                    handle_connection(stream, proxy).await;
                 });
             }
             _ = &mut ctrl_c => break,
@@ -55,7 +53,7 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
     Ok(())
 }
 
-async fn handle_connection(stream: UnixStream, config: DaemonConfig, proxy: ProxyState) {
+async fn handle_connection(stream: UnixStream, proxy: ProxyState) {
     let mut reader = BufReader::new(stream).take((MAX_LINE + 1) as u64);
     let mut raw = Vec::new();
 
@@ -68,23 +66,17 @@ async fn handle_connection(stream: UnixStream, config: DaemonConfig, proxy: Prox
 
     let stream = reader.into_inner().into_inner();
     match command {
-        Ok(Command::ProxyRegister(command)) if config.enable_proxy => {
+        Ok(Command::ProxyRegister(command)) => {
             let _ = crate::proxy::register(stream, command, proxy).await;
         }
-        Ok(Command::ProxyListen(command)) if config.enable_proxy => {
+        Ok(Command::ProxyListen(command)) => {
             write_response(stream, crate::proxy::listen(command, proxy).await).await;
         }
-        Ok(Command::ProxyStop(command)) if config.enable_proxy => {
+        Ok(Command::ProxyStop(command)) => {
             write_response(stream, crate::proxy::stop(command, proxy).await).await;
         }
-        Ok(Command::ProxyStream(command)) if config.enable_proxy => {
+        Ok(Command::ProxyStream(command)) => {
             crate::proxy::attach_stream(stream, command, proxy).await;
-        }
-        Ok(Command::ProxyRegister(_))
-        | Ok(Command::ProxyListen(_))
-        | Ok(Command::ProxyStop(_))
-        | Ok(Command::ProxyStream(_)) => {
-            write_response(stream, Response::error("proxy disabled")).await;
         }
         Ok(command) => {
             let action_config = ActionConfig;

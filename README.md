@@ -17,8 +17,8 @@ wezcmd send --socket /tmp/wezcmd-host.123.sock forward --port 8443 --host cd
 
 ## Experimental TCP proxy
 
-`wezcmd daemon --enable-proxy` enables a prototype supervised TCP tunnel mode without `ssh -fNL`.
-It is disabled by default.
+`wezcmd` includes a prototype supervised TCP tunnel mode without `ssh -fNL`.
+Forwarding the wezcmd socket to a host grants that session this capability, so only forward it to trusted hosts.
 
 One remote worker holds a control connection over the same forwarded Unix socket:
 
@@ -43,7 +43,7 @@ wezcmd proxy-stop --socket "$WEZCMD_SOCKET" \
 
 If the worker/control connection exits, the daemon drops that session's listeners.
 The existing `forward` command still uses `ssh -fNL`; this proxy is not wired into
-dotfiles yet and should stay opt-in until the UX/security model settles.
+dotfiles yet.
 
 ## Protocol
 
