@@ -8,6 +8,7 @@ use tokio::net::{TcpListener, TcpStream, UnixStream};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, timeout};
+use tracing::{info, warn};
 
 use crate::protocol::{
     Port, ProxyEvent, ProxyListen, ProxyRegister, ProxyStop, ProxyStream, Response,
@@ -49,6 +50,7 @@ pub async fn register(stream: UnixStream, command: ProxyRegister, state: ProxySt
     {
         let mut sessions = state.inner.sessions.lock().await;
         if sessions.contains_key(&command.session) {
+            warn!(session = %command.session, "proxy_session_exists");
             write_response(stream, Response::error("session exists")).await?;
             return Ok(());
         }
@@ -63,7 +65,7 @@ pub async fn register(stream: UnixStream, command: ProxyRegister, state: ProxySt
 
     let mut stream = stream;
     write_response(&mut stream, Response::ok()).await?;
-    eprintln!("[wezcmd] proxy session registered: {}", command.session);
+    info!(session = %command.session, "proxy_session_registered");
 
     while let Some(event) = receiver.recv().await {
         let mut payload = serde_json::to_vec(&event)?;
@@ -74,22 +76,27 @@ pub async fn register(stream: UnixStream, command: ProxyRegister, state: ProxySt
     }
 
     cleanup_session(&state, &command.session).await;
-    eprintln!("[wezcmd] proxy session stopped: {}", command.session);
+    info!(session = %command.session, "proxy_session_stopped");
     Ok(())
 }
 
 pub async fn listen(command: ProxyListen, state: ProxyState) -> Response {
     if let Err(err) = check_session(&state, &command.session, &command.token).await {
+        warn!(session = %command.session, err = %err, "proxy_listen_rejected");
         return Response::error(err.to_string());
     }
 
     let listener = match TcpListener::bind(("127.0.0.1", command.local_port.0)).await {
         Ok(listener) => listener,
-        Err(err) => return Response::error(err.to_string()),
+        Err(err) => {
+            warn!(session = %command.session, local_port = command.local_port.0, err = %err, "proxy_listen_bind_failed");
+            return Response::error(err.to_string());
+        }
     };
 
     let mut listeners = state.inner.listeners.lock().await;
     if listeners.contains_key(&command.local_port.0) {
+        warn!(session = %command.session, local_port = command.local_port.0, "proxy_listen_port_busy");
         return Response::error("local port already forwarded");
     }
 
@@ -98,6 +105,7 @@ pub async fn listen(command: ProxyListen, state: ProxyState) -> Response {
     let task = tokio::spawn(async move {
         accept_loop(state_for_task, session, command.remote_port, listener).await;
     });
+    info!(session = %command.session, local_port = command.local_port.0, remote_port = command.remote_port.0, "proxy_listening");
     listeners.insert(
         command.local_port.0,
         ListenerEntry {
@@ -110,19 +118,23 @@ pub async fn listen(command: ProxyListen, state: ProxyState) -> Response {
 
 pub async fn stop(command: ProxyStop, state: ProxyState) -> Response {
     if let Err(err) = check_session(&state, &command.session, &command.token).await {
+        warn!(session = %command.session, err = %err, "proxy_stop_rejected");
         return Response::error(err.to_string());
     }
     let mut listeners = state.inner.listeners.lock().await;
     let Some(entry) = listeners.get(&command.local_port.0) else {
+        warn!(session = %command.session, local_port = command.local_port.0, "proxy_stop_missing");
         return Response::error("not forwarded");
     };
     if entry.session != command.session {
+        warn!(session = %command.session, owner = %entry.session, local_port = command.local_port.0, "proxy_stop_wrong_owner");
         return Response::error("owned by another session");
     }
     let entry = listeners
         .remove(&command.local_port.0)
         .expect("entry checked");
     entry.task.abort();
+    info!(session = %command.session, local_port = command.local_port.0, "proxy_stopped");
     Response::ok()
 }
 
@@ -131,6 +143,7 @@ pub async fn attach_stream(stream: UnixStream, command: ProxyStream, state: Prox
         .await
         .is_err()
     {
+        warn!(session = %command.session, stream = command.stream, "proxy_stream_rejected");
         return;
     }
     let key = PendingKey {
@@ -139,6 +152,8 @@ pub async fn attach_stream(stream: UnixStream, command: ProxyStream, state: Prox
     };
     if let Some(sender) = state.inner.pending.lock().await.remove(&key) {
         let _ = sender.send(stream);
+    } else {
+        warn!(session = %key.session, stream = key.stream, "proxy_stream_unmatched");
     }
 }
 

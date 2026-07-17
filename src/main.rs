@@ -110,6 +110,7 @@ enum SendCommand {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    init_logging();
     match run().await {
         Ok(code) => code,
         Err(err) => {
@@ -117,6 +118,14 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn init_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_target(false)
+        .compact()
+        .try_init();
 }
 
 async fn run() -> Result<ExitCode> {

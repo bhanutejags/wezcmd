@@ -118,6 +118,19 @@ impl Response {
 }
 
 impl Command {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Command::Open(_) => "open",
+            Command::Forward(_) => "forward",
+            Command::Vscode(_) => "vscode",
+            Command::Notify(_) => "notify",
+            Command::ProxyRegister(_) => "proxy_register",
+            Command::ProxyListen(_) => "proxy_listen",
+            Command::ProxyStop(_) => "proxy_stop",
+            Command::ProxyStream(_) => "proxy_stream",
+        }
+    }
+
     pub fn from_json(input: &[u8]) -> Result<Self> {
         let cmd: Command = serde_json::from_slice(input).map_err(|_| anyhow!("invalid"))?;
         cmd.validate()?;

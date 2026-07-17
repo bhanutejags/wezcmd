@@ -7,6 +7,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
 use tokio::time::{Duration, timeout};
+use tracing::{info, warn};
 
 use crate::actions::{ActionConfig, dispatch};
 use crate::protocol::{Command, Response};
@@ -27,7 +28,7 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
     umask(old_umask);
     let listener = listener?;
 
-    eprintln!("[wezcmd] listening on {}", config.socket_path.display());
+    info!(socket = %config.socket_path.display(), "daemon_listening");
 
     let ctrl_c = signal::ctrl_c();
     tokio::pin!(ctrl_c);
@@ -49,7 +50,7 @@ pub async fn serve(config: DaemonConfig) -> Result<()> {
     }
 
     let _ = fs::remove_file(&config.socket_path);
-    eprintln!("[wezcmd] stopped");
+    info!("daemon_stopped");
     Ok(())
 }
 
@@ -67,26 +68,41 @@ async fn handle_connection(stream: UnixStream, proxy: ProxyState) {
     let stream = reader.into_inner().into_inner();
     match command {
         Ok(Command::ProxyRegister(command)) => {
+            info!(cmd = "proxy_register", "command_received");
             let _ = crate::proxy::register(stream, command, proxy).await;
         }
         Ok(Command::ProxyListen(command)) => {
+            info!(cmd = "proxy_listen", "command_received");
             write_response(stream, crate::proxy::listen(command, proxy).await).await;
         }
         Ok(Command::ProxyStop(command)) => {
+            info!(cmd = "proxy_stop", "command_received");
             write_response(stream, crate::proxy::stop(command, proxy).await).await;
         }
         Ok(Command::ProxyStream(command)) => {
+            info!(cmd = "proxy_stream", "command_received");
             crate::proxy::attach_stream(stream, command, proxy).await;
         }
         Ok(command) => {
+            let cmd = command.name();
+            info!(cmd, "command_received");
             let action_config = ActionConfig;
             let response = match dispatch(command, &action_config).await {
-                Ok(()) => Response::ok(),
-                Err(err) => Response::error(err),
+                Ok(()) => {
+                    info!(cmd, "command_ok");
+                    Response::ok()
+                }
+                Err(err) => {
+                    warn!(cmd, err, "command_error");
+                    Response::error(err)
+                }
             };
             write_response(stream, response).await;
         }
-        Err(_) => write_response(stream, Response::error("invalid")).await,
+        Err(_) => {
+            warn!("command_invalid");
+            write_response(stream, Response::error("invalid")).await;
+        }
     }
 }
 

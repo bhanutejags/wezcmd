@@ -2,6 +2,7 @@ use std::process::Stdio;
 
 use tokio::process::Command as TokioCommand;
 use tokio::time::{Duration, timeout};
+use tracing::{info, warn};
 
 use crate::protocol::{Command, Forward, Notify, Open, Vscode};
 
@@ -50,12 +51,14 @@ pub async fn dispatch(command: Command, _config: &ActionConfig) -> Result<(), St
             if target.is_empty() {
                 return Err("no forward target host".into());
             }
+            info!(host = %target, port = port.0, "forward_requested");
             if !confirm_forward(port.0, &target).await {
+                warn!(host = %target, port = port.0, "forward_denied");
                 return Err("denied".into());
             }
 
             let bind = format!("{}:localhost:{}", port.0, port.0);
-            run_argv(
+            let result = run_argv(
                 &[
                     "/usr/bin/ssh",
                     "-f",
@@ -71,7 +74,11 @@ pub async fn dispatch(command: Command, _config: &ActionConfig) -> Result<(), St
                 Duration::from_secs(10),
                 true,
             )
-            .await
+            .await;
+            if result.is_ok() {
+                info!(host = %target, port = port.0, "forward_started");
+            }
+            result
         }
         Command::ProxyRegister(_)
         | Command::ProxyListen(_)
